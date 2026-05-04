@@ -42,10 +42,17 @@ def main():
     mqtt_manager.connect()
     
     # 6. Pętla Główna
+# 6. Pętla Główna
     def main_loop():
         # A. Odczyt wejść (Joystick/Klawiatura) -> Aktualizacja AppState
         input_manager.update(app_state)
         
+        # --- NOWY KOD: Sprawdzenie wyzwolenia z pada ---
+        if app_state.trigger_full_start:
+            gui.run_full_start()
+            app_state.trigger_full_start = False # Reset flagi po uruchomieniu
+        # -----------------------------------------------
+
         # B. Wysłanie komend do ODrive przez MQTT
         mqtt_manager.send_drive_command()
         

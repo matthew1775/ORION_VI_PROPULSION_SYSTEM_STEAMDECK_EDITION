@@ -12,9 +12,9 @@ TOPIC_FEEDBACK     = "odrive/feedback"
 TOPIC_CMD          = "odrive/cmd"
 
 # Tematy MQTT - Prawa strona
-TOPIC_SET_VELOCITY_RIGHT = "odrive_right/set_velocity_right"
-TOPIC_FEEDBACK_RIGHT     = "odrive_right/feedback_right"
-TOPIC_CMD_RIGHT          = "odrive_right/cmd_right"
+TOPIC_SET_VELOCITY_RIGHT = "odrive/set_velocity"
+TOPIC_FEEDBACK_RIGHT     = "odrive/feedback_right"
+TOPIC_CMD_RIGHT          = "odrive/cmd"
 
 # Komendy MQTT
 CMD_MAP = {

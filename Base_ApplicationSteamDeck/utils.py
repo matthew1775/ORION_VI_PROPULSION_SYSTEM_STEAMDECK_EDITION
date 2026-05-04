@@ -60,8 +60,12 @@ class AppState:
         self.mqtt_connected = False
         self.mqtt_status_text = "MQTT: Rozłączono"
         
+        # --- NOWE ZMIENNE: Bezpieczeństwo i kontrola z pada ---
+        self.buttons_locked = False       # Domyślnie przyciski są odblokowane
+        self.trigger_full_start = False   # Flaga wyzwalająca kalibrację
+        
         # Logi
-        self.logs = [] # Lista do przechowywania logów dla GUI
+        self.logs = []
         
         # Narzędzia
         self.latency_estimator = LatencyEstimator(maxlen=100)

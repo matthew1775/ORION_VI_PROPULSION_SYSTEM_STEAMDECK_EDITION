@@ -18,12 +18,13 @@ class InputManager:
 
     def scan_joysticks(self):
         self.joysticks = []
-        pygame.joystick.quit()
-        pygame.joystick.init()
+        if not pygame.joystick.get_init():
+            pygame.joystick.init()
         count = pygame.joystick.get_count()
         self.joysticks = [pygame.joystick.Joystick(i) for i in range(count)]
         for joy in self.joysticks:
-            joy.init()
+            if not joy.get_init():
+                joy.init()
         return self.joysticks
 
     def handle_keyboard(self, event_type, key_code):
@@ -41,22 +42,30 @@ class InputManager:
             
     def update(self, app_state):
         """Oblicza sterowanie i aktualizuje AppState"""
-        # Zastępujemy event.pump() pętlą event.get(), aby wyłapać POJEDYNCZE wciśnięcia strzałek
-        for event in pygame.event.get():
-            # Steam Deck (i Linux) często widzi D-Pad jako tzw. "Hat"
+        try:
+            events = pygame.event.get()
+        except KeyError:
+            events = []
+        for event in events:
             if event.type == pygame.JOYHATMOTION:
-                # event.value to krotka (x, y). y: 1 (góra), -1 (dół)
                 if event.value[1] == 1:
                     self.pad_max_limit = min(config.ABSOLUTE_MAX_LIMIT, self.pad_max_limit + 1.0)
                 elif event.value[1] == -1:
                     self.pad_max_limit = max(1.0, self.pad_max_limit - 1.0)
             
-            # W ramach zabezpieczenia (fallback), gdyby Steam Deck zmapował D-Pad jako zwykłe przyciski
             elif event.type == pygame.JOYBUTTONDOWN:
-                if event.button == 11:  # Zazwyczaj 11 to UP na padach
-                    self.pad_max_limit = min(config.ABSOLUTE_MAX_LIMIT, self.pad_max_limit + 1.0)
-                elif event.button == 12: # Zazwyczaj 12 to DOWN
-                    self.pad_max_limit = max(1.0, self.pad_max_limit - 1.0)
+                # Blokada przycisków pod R3 (zazwyczaj przycisk nr 9 w Pygame dla pada Xbox/SteamDeck)
+                if event.button == 9: 
+                    app_state.buttons_locked = not app_state.buttons_locked
+                    stan_txt = "WŁĄCZONA" if app_state.buttons_locked else "WYŁĄCZONA"
+                    app_state.log(f"[Bezpieczeństwo] Blokada przycisków: {stan_txt}")
+                
+                # Uruchomienie sekwencji pod 'X' (zazwyczaj przycisk nr 2)
+                elif event.button == 2:
+                    if not app_state.buttons_locked:
+                        app_state.trigger_full_start = True
+                    else:
+                        app_state.log("!! ODRZUCONO: Przyciski zablokowane. Wciśnij prawą gałkę (R3), aby odblokować.")
 
         joy_throttle = 0.0
         joy_active = False
