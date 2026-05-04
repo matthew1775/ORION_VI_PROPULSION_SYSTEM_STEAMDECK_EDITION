@@ -20,9 +20,15 @@ class DashboardGUI:
         self.input_manager : InputManager = input_manager
         self.mqtt_manager : MqttManager = mqtt_manager
         
+        # --- DODANE ZMIENNE ---
+        self._last_locked_state = None
+        self._is_full_start_running = False
+        # ----------------------
+
         self.start_time = time.time()
         self.setup_ui()
         self._start_network_monitor()
+
 
     def _ping_host(self, ip):
         """Pomocnicza funkcja pingująca dany adres IP (nieblokująca)"""
@@ -419,6 +425,7 @@ class DashboardGUI:
             self.lbl_dist.config(text="Dystans: 0.00 m")
 
     def run_full_start(self):
+        self._is_full_start_running = True  # <-- DODANE
         threading.Thread(target=self._full_start_thread, daemon=True).start()
 
     def _full_start_thread(self):
@@ -458,6 +465,10 @@ class DashboardGUI:
 
             self.btn_dump_errors.config(state="normal", bg=config.BTN_DUMP_COLOR)
             self.btn_reboot_odrive.config(state="normal", bg=config.BTN_REBOOT_COLOR)
+            # --- DODANE ---
+            self._is_full_start_running = False
+            self._last_locked_state = None  # Wymusza odświeżenie kolorów w GUI
+            # --------------n  
         
         self.root.after(0, enable_buttons)
 
@@ -465,6 +476,32 @@ class DashboardGUI:
         self.lbl_target.config(text=f"Target: {self.state.target_rps:.2f} RPS")
         self.lbl_steering.config(text=f"Steering: {self.state.steering_val:.2f}")
         self.lbl_mqtt_status.config(text=self.state.mqtt_status_text)
+
+        # --- NOWY KOD: Obsługa blokady przycisków na czarno ---
+        if not self._is_full_start_running:
+            if self.state.buttons_locked != self._last_locked_state:
+                self._last_locked_state = self.state.buttons_locked
+                if self.state.buttons_locked:
+                    # Blokujemy i zmieniamy kolory na czarny
+                    bg_locked = "black"
+                    fg_locked = "#444444" # Ciemnoszary, ledwo widoczny tekst
+                    self.btn_full_start.config(state="disabled", bg=bg_locked, fg=fg_locked)
+                    self.btn_calib.config(state="disabled", bg=bg_locked, fg=fg_locked)
+                    self.btn_closed_loop.config(state="disabled", bg=bg_locked, fg=fg_locked)
+                    self.btn_vel_mode.config(state="disabled", bg=bg_locked, fg=fg_locked)
+                    self.btn_ramp_mode.config(state="disabled", bg=bg_locked, fg=fg_locked)
+                    self.btn_dump_errors.config(state="disabled", bg=bg_locked, fg=fg_locked)
+                    self.btn_reboot_odrive.config(state="disabled", bg=bg_locked, fg=fg_locked)
+                else:
+                    # Odblokowujemy i przywracamy oryginalne kolory
+                    self.btn_full_start.config(state="normal", bg=config.BTN_FULL_START_COLOR, fg="white")
+                    self.btn_calib.config(state="normal", bg="#AA8800", fg="white")
+                    self.btn_closed_loop.config(state="normal", bg="#006600", fg="white")
+                    self.btn_vel_mode.config(state="normal", bg="#004488", fg="white")
+                    self.btn_ramp_mode.config(state="normal", bg="#550088", fg="white")
+                    self.btn_dump_errors.config(state="normal", bg=config.BTN_DUMP_COLOR, fg="white")
+                    self.btn_reboot_odrive.config(state="normal", bg=config.BTN_REBOOT_COLOR, fg="white")
+        # ----------------------------------------------------
 
         for odrive_id, odrv in self.state.o_drives.items():
             widgets = self.odrive_widgets.get(odrive_id)
