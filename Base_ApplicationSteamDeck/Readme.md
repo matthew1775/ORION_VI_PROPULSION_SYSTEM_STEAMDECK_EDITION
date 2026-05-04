@@ -75,4 +75,4 @@ The application prioritizes a connected Joystick/Gamepad over keyboard input.
 **Developed by KN Microchip (Politechnika Lubelska)**
  
 
- 
+ dupa
