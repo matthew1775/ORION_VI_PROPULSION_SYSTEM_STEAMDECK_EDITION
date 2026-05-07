@@ -6,6 +6,8 @@ from collections import deque
 import subprocess
 import platform
 import math 
+import pygame
+import os
 
 # Matplotlib
 import matplotlib
@@ -27,7 +29,15 @@ class DashboardGUI:
         self.state : AppState = app_state
         self.input_manager : InputManager = input_manager
         self.mqtt_manager : MqttManager = mqtt_manager
-        
+        # Inicjalizacja dźwięku alarmu
+        pygame.mixer.init()
+        self.alarm_sound = None
+        if os.path.exists("alarm.wav"):
+            self.alarm_sound = pygame.mixer.Sound("alarm.wav")
+            # Ustaw głośność na maksimum (1.0)
+            self.alarm_sound.set_volume(1.0) 
+        else:
+            print("Brak pliku alarm.wav! Alarm dźwiękowy nie będzie działał.")
         # Dane do wykresu
         self.plot_data_x = deque(maxlen=200)
         self.plot_data_target = deque(maxlen=200)
@@ -294,7 +304,7 @@ class DashboardGUI:
         self.lbl_packet_age.pack(anchor="w", padx=10)
         self.lbl_lag = tk.Label(fb_frame, text="Lag: -- ms", bg=config.BG_COLOR, fg="#aaaaaa", font=("Consolas", 16, "bold"))
         self.lbl_lag.pack(anchor="w", padx=10, pady=(5,10))
-        
+
     def _build_odrive_panel(self, parent, odrive_id):
         frame = tk.LabelFrame(parent, text=f"ODrive {odrive_id}", bg=config.BG_COLOR, fg="#00ff00")
         frame.grid_propagate(False)
@@ -597,6 +607,17 @@ class DashboardGUI:
                     widgets["lbl_lag"].config(fg="orange")
                 else:
                     widgets["lbl_lag"].config(fg="red")
+            # --- NOWY KOD: ALARM DŹWIĘKOWY (LAG > 1000 ms) ---
+                if lag > 1000:
+                    current_time = time.time()
+                    # Sprawdź, czy minęła co najmniej 1 sekunda od ostatniego alarmu
+                    if current_time - self.state.last_alarm_time > 1.0:
+                        if hasattr(self, 'alarm_sound') and self.alarm_sound:
+                            self.alarm_sound.play()
+                        
+                        self.state.log(f"!!! UWAGA: KRYTYCZNY LAG na ODrive {odrive_id} ({int(lag)}ms) !!!")
+                        self.state.last_alarm_time = current_time
+                # -------------------------------------------------
 
         # --- AKTUALIZACJA 3 DIOD SIECIOWYCH ---
         color_ground = "#00ff00" if self.state.ping_ground_ok else "#444"

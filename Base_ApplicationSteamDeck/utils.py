@@ -80,6 +80,8 @@ class AppState:
         self.ping_broker_ok = False
         self.ping_router_ok = False
         self.ping_ground_ok = False
+        # NOWA ZMIENNA DLA ALARMU
+        self.last_alarm_time = 0.0
 
     def log(self, message):
         self.logs.append(message)
