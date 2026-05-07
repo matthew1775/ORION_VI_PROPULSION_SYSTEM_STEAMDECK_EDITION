@@ -5,7 +5,6 @@ import pygame      # <-- DODAJ TO
 
 # --- ZABEZPIECZENIE AUDIO DLA STEAM DECK ---
 # Musi być ustawione PRZED inicjalizacją jakiegokolwiek modułu pygame!
-os.environ["SDL_AUDIODRIVER"] = "pipewire"
 # -------------------------------------------
 
 from utils import AppState
