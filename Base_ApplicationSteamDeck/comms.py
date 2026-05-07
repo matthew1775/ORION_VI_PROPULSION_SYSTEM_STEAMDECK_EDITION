@@ -34,7 +34,8 @@ class MqttManager:
         if rc == 0:
             self.state.mqtt_connected = True
             self.state.mqtt_status_text = "MQTT: POŁĄCZONO"
-            client.subscribe(config.TOPIC_FEEDBACK)
+            client.subscribe(config.TOPIC_FEEDBACK_LEFT)
+            client.subscribe(config.TOPIC_FEEDBACK_RIGHT)
             self.state.log(">> Połączono z brokerem (RC=0).")
         else:
             self.state.mqtt_status_text = f"MQTT: Błąd {rc}"
@@ -52,63 +53,117 @@ class MqttManager:
         try:
             payload = json.loads(msg.payload.decode())
             
-            if "error" in payload:
-                if "odrive_id" in payload:
-                    self.state.log(f"!! ERROR: {payload['error']} (odrive_id: {payload['odrive_id']})")
-                self.state.log(f"!! ERROR: {payload['error']} (odrive_id: -)")
-                return
-            
+            # Obsługa logowania błędów 
             if isinstance(payload, dict) and "error" in payload:
                 oid = payload.get("odrive_id", "-")
                 self.state.log(f"!! ODRIVE ERROR: {payload['error']} (ID: {oid})")
-                return # Exit here
+                return 
 
-            if not isinstance(payload, list) or len(payload) != 5:
-                self.state.log(f"!! ERROR: feedback data is of a wrong format: {payload}")
-                return
+            # Obsługa nowego formatu telemetrii (obiekt JSON z kluczami zamiast listy)
+            if isinstance(payload, dict) and "side_id" in payload:
+                side = str(payload["side_id"])
+                
+                id_front = "0" + side
+                id_rear  = "1" + side
+                
+                vel_front = payload.get("vel_front", 0.0)
+                pos_front = payload.get("pos_front", 0.0)
+                vel_rear  = payload.get("vel_rear", 0.0)
+                pos_rear  = payload.get("pos_rear", 0.0)
+                
+                # Dodano: Pobranie wartości prądu z serw (A - przód, B - tył)
+                cfb_a = payload.get("servoA_cfb", 0.0)
+                cfb_b = payload.get("servoB_cfb", 0.0)
+                
+                # Zapis do współdzielonego stanu (AppState)
+                self.state.o_drives[id_front].measured_velocity = vel_front
+                self.state.o_drives[id_front].measured_position = pos_front
+                self.state.o_drives[id_front].servo_current = cfb_a
+                self.state.o_drives[id_front].last_feedback_time = time.time()
+                
+                self.state.o_drives[id_rear].measured_velocity = vel_rear
+                self.state.o_drives[id_rear].measured_position = pos_rear
+                self.state.o_drives[id_rear].servo_current = cfb_b
+                self.state.o_drives[id_rear].last_feedback_time = time.time()
 
-            side:int8 = payload[0]
-            estimate_lag_sum:float = 0
-
-            for i in range(2):
-                self.state.o_drives[str(i) + str(side)].measured_velocity = payload[i * 2 + 1]
-                self.state.o_drives[str(i) + str(side)].measured_position = payload[i * 2 + 2]
-                self.state.o_drives[str(i) + str(side)].last_feedback_time = time.time()
-                estimate_lag_sum += self.state.o_drives[str(i) + str(side)].measured_velocity
-
-            # TODO: separate lag calculation and storage for both sides. 
-            # Now, it pushes latency only for one side read at a time, calculating the mean value
-            # Lag estimator (jeśli używasz utils.py z poprzedniej wersji)
-            self.state.latency_estimator.estimate_lag(estimate_lag_sum / 2)
-            
-            
+                # Estymacja opóźnień
+                estimate_lag_sum = vel_front + vel_rear
+                self.state.latency_estimator.estimate_lag(estimate_lag_sum / 2.0)
+                
+            elif isinstance(payload, list):
+                self.state.log(f"!! Odrzucono przestarzały format ramki: {payload}")
+                                  
         except json.JSONDecodeError:
             raw = msg.payload.decode()
             self.state.log(f"[JSON DECODE ERROR] MSG (RAW): {raw}")
         except Exception as e:
-            # Ciche ignorowanie błędów parsowania, żeby nie spamować konsoli
             pass
 
     def send_drive_command(self):
-            """Wysyła ramkę sterującą JSON: velocity + steering"""
-            if self.client and self.state.mqtt_connected:
+        """Wysyła ramkę sterującą JSON zależnie od wybranego trybu jazdy"""
+        if self.client and self.state.mqtt_connected:
+            v = round(self.state.target_rps, 3)
+            s = round(self.state.steering_val, 3)
+            s = 0.0 if abs(s) < 0.25 else s
+            
+            # 1. Deklaracja pustej zmiennej - to usuwa czerwone podkreślenie!
+            payload = None 
+                         
+            # ===================================================
+            # TRYB 1: JAZDA NORMALNA
+            # ===================================================
+            if getattr(self.state, 'drive_mode', 1) == 1:
                 payload = {
-                    "velocity": round(self.state.target_rps, 3),
-                    "steering": round(self.state.steering_val, 3)
+                    "eventType": "propulsion",
+                    "velocity": {
+                        "fl_speed": -v,
+                        "rl_speed": v,
+                        "fr_speed": -v,
+                        "rr_speed": -v,
+                        "fl_rad": s,
+                        "rl_rad": -s,
+                        "fr_rad": s,
+                        "rr_rad": -s
+                    }
                 }
-                try:
-                    # Generujemy JSONa raz
-                    payload_json = json.dumps(payload)
-                    
-                    # Publikacja na oryginalny temat
-                    self.client.publish(config.TOPIC_SET_VELOCITY, payload_json)
-                    
-                    # Publikacja zduplikowana na prawą stronę
-                    self.client.publish(f"{config.TOPIC_SET_VELOCITY}_right", payload_json)
-                    
-                    self.state.latency_estimator.push_target(self.state.target_rps)
-                except Exception as e:
-                    self.state.log(f"Błąd wysyłania: {e}")
+
+            # ===================================================
+            # TRYB 2: OBRÓT W MIEJSCU
+            # ===================================================
+            elif self.state.drive_mode == 2:
+                TURN_ANGLE = 1.0 
+                v_rot = s * self.state.current_speed_limit 
+
+                if time.time() - self.state.mode_switch_time < 1.5:
+                    v_rot = 0.0
+
+                payload = {
+                    "eventType": "propulsion",
+                    "velocity": {
+                        "fl_speed": -v_rot,
+                        "rl_speed": v_rot,
+                        "fr_speed": v_rot,  
+                        "rr_speed": v_rot,  
+                        "fl_rad": TURN_ANGLE,       
+                        "fr_rad": -TURN_ANGLE,      
+                        "rl_rad": -TURN_ANGLE,       
+                        "rr_rad": TURN_ANGLE        
+                    }
+                }
+
+            # 2. Zabezpieczenie: jeśli payload jest puste, nie wysyłaj
+            if payload is None:
+                return
+
+            # --- PUBLIKACJA WYGENEROWANEGO PAYLOADU ---
+            try:
+                payload_json = json.dumps(payload)
+                self.client.publish(config.TOPIC_CMD, payload_json)
+                self.state.latency_estimator.push_target(self.state.target_rps)
+                
+            except Exception as e:
+                self.state.log(f"Błąd wysyłania: {e}")
+            
 
     def send_cmd(self, cmd, target="a"):
             """
@@ -156,11 +211,8 @@ class MqttManager:
                 # Generujemy JSONa raz
                 payload_json = json.dumps(payload)
                 
-                # Publikacja na oryginalny temat
+                # Publikacja na wspólny temat komend
                 self.client.publish(config.TOPIC_CMD, payload_json)
-                
-                # Publikacja zduplikowana na prawą stronę
-                self.client.publish(f"{config.TOPIC_CMD}_right", payload_json)
                 
                 self.state.log(f">> CMD: {cmd} ({target}) -> {payload}")
             except Exception as e:

@@ -6,15 +6,10 @@ BROKER_ADDRESS = "192.168.1.1"   # IP brokera/ESP32
 BROKER_PORT = 1883
 
 # Tematy MQTT
-# Tematy MQTT - Lewa strona (domyślna)
-TOPIC_SET_VELOCITY = "odrive/set_velocity"
-TOPIC_FEEDBACK     = "odrive/feedback"
-TOPIC_CMD          = "odrive/cmd"
+TOPIC_CMD          = "propulsion/cmd"
+TOPIC_FEEDBACK_LEFT = "propulsion/feedback_left"
+TOPIC_FEEDBACK_RIGHT = "propulsion/feedback_right"
 
-# Tematy MQTT - Prawa strona
-TOPIC_SET_VELOCITY_RIGHT = "odrive/set_velocity"
-TOPIC_FEEDBACK_RIGHT     = "odrive/feedback_right"
-TOPIC_CMD_RIGHT          = "odrive/cmd"
 
 # Komendy MQTT
 CMD_MAP = {

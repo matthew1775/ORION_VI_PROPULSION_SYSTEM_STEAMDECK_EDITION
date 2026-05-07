@@ -1,6 +1,7 @@
 # inputs.py
 import pygame
 import config
+import time
 
 class InputManager:
     def __init__(self):
@@ -13,18 +14,17 @@ class InputManager:
         self.key_throttle = 0.0
         self.key_max_limit = 10.0
         
-        # Nowa zmienna: zapamiętuje limit ustawiony przez strzałki na padzie
+        # Nowa zmienna: zapamiętuje limit ustawiony przez strzałki (krzyżak) na Steam Deck
         self.pad_max_limit = 10.0
 
     def scan_joysticks(self):
         self.joysticks = []
-        if not pygame.joystick.get_init():
-            pygame.joystick.init()
+        pygame.joystick.quit()
+        pygame.joystick.init()
         count = pygame.joystick.get_count()
         self.joysticks = [pygame.joystick.Joystick(i) for i in range(count)]
         for joy in self.joysticks:
-            if not joy.get_init():
-                joy.init()
+            joy.init()
         return self.joysticks
 
     def handle_keyboard(self, event_type, key_code):
@@ -46,23 +46,48 @@ class InputManager:
             events = pygame.event.get()
         except KeyError:
             events = []
+            
         for event in events:
+            # ==========================================
+            # 1. NAJWAŻNIEJSZE: USTAWIENIE PRĘDKOŚCI (D-PAD)
+            # ==========================================
             if event.type == pygame.JOYHATMOTION:
-                if event.value[1] == 1:
+                if event.value[1] == 1: # Strzałka w górę
                     self.pad_max_limit = min(config.ABSOLUTE_MAX_LIMIT, self.pad_max_limit + 1.0)
-                elif event.value[1] == -1:
+                elif event.value[1] == -1: # Strzałka w dół
                     self.pad_max_limit = max(1.0, self.pad_max_limit - 1.0)
             
+            # ==========================================
+            # 2. PRZYCISKI STEAM DECK
+            # ==========================================
             elif event.type == pygame.JOYBUTTONDOWN:
-                # Blokada przycisków pod R3 (zazwyczaj przycisk nr 9 w Pygame dla pada Xbox/SteamDeck)
-                if event.button == 9: 
-                    app_state.buttons_locked = not app_state.buttons_locked
+                
+                # --- PRZYCISK 'A' (button 0): Tryb Obrotu ---
+                if event.button == 0: 
+                    # ZABEZPIECZENIE: Zmiana trybu tylko w spoczynku
+                    if abs(app_state.target_rps) < 0.1:
+                        if app_state.drive_mode == 1:
+                            app_state.drive_mode = 2
+                            app_state.mode_switch_time = time.time()
+                            app_state.log(">>> TRYB JAZDY: OBRÓT W MIEJSCU (Czekaj na serwa) <<<")
+                        else:
+                            app_state.drive_mode = 1
+                            app_state.mode_switch_time = time.time()
+                            app_state.log(">>> TRYB JAZDY: NORMALNY <<<")
+                    else:
+                        app_state.log("!!! ODMOWA ZMIANY TRYBU: Najpierw zatrzymaj łazika !!!")
+                
+                # --- PRZYCISK 'R3' (button 9): Blokada bezpieczeństwa ---
+                elif event.button == 9: 
+                    # Pobieramy stan blokady (lub domyślnie False, jeśli brak)
+                    current_lock = getattr(app_state, 'buttons_locked', False)
+                    app_state.buttons_locked = not current_lock
                     stan_txt = "WŁĄCZONA" if app_state.buttons_locked else "WYŁĄCZONA"
                     app_state.log(f"[Bezpieczeństwo] Blokada przycisków: {stan_txt}")
                 
-                # Uruchomienie sekwencji pod 'X' (zazwyczaj przycisk nr 2)
+                # --- PRZYCISK 'X' (button 2): Full Start (Auto) ---
                 elif event.button == 2:
-                    if not app_state.buttons_locked:
+                    if not getattr(app_state, 'buttons_locked', False):
                         app_state.trigger_full_start = True
                     else:
                         app_state.log("!! ODRZUCONO: Przyciski zablokowane. Wciśnij prawą gałkę (R3), aby odblokować.")
@@ -76,19 +101,18 @@ class InputManager:
             try:
                 joy = self.joysticks[0]
                 
-                # Przekazujemy nasz zaktualizowany strzałkami limit do stanu aplikacji
+                # Przekazujemy limit ze strzałek do stanu aplikacji
                 app_state.current_speed_limit = self.pad_max_limit
                 
-                # Gaz/Hamulec - Lewa gałka pionowo (Zazwyczaj Axis 1)
-                # Wychylenie w górę daje wartości ujemne, dlatego dajemy minus przed joy.get_axis
+                # Gaz (Axis 1 - lewa gałka pionowo)
                 axis1 = -joy.get_axis(1)
                 if abs(axis1) > config.JOYSTICK_DEADZONE:
                     joy_throttle = axis1 * app_state.current_speed_limit
                     joy_active = True
                 
-                # Skręt - Prawa gałka poziomo (Zazwyczaj Axis 3 lub 2)
-                if joy.get_numaxes() > 3:
-                    steering = joy.get_axis(3)
+                # Skręt (Axis 5 lub 2 - zależy czy sterownik PC czy bezpośrednio konsola)
+                if joy.get_numaxes() > config.STEERING_AXIS_INDEX:
+                    steering = joy.get_axis(config.STEERING_AXIS_INDEX)
                 elif joy.get_numaxes() > 2:
                     steering = joy.get_axis(2)
                     
@@ -97,7 +121,7 @@ class InputManager:
         else:
             app_state.current_speed_limit = self.key_max_limit
 
-        # Wybór (Joystick vs Klawiatura)
+        # Wybór źródła (Joystick vs Klawiatura)
         if joy_active:
             app_state.target_rps = joy_throttle
         else:

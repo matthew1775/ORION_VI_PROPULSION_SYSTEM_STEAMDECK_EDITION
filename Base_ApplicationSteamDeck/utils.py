@@ -34,6 +34,9 @@ class ODrive:
         self.measured_position = 0.0
         self.start_position_offset = 0.0
         self.last_feedback_time = 0.0
+        # NOWE POLA DLA SERWO
+        self.servo_current = 0.0
+        self.servo_angle_deg = 0.0
 
 class AppState:
     """Klasa przechowująca współdzielony stan aplikacji"""
@@ -56,16 +59,20 @@ class AppState:
         self.steering_val = 0.0
         self.current_speed_limit = 10.0
         
+        # --- NOWE ZMIENNE DLA TRYBÓW JAZDY ---
+        self.drive_mode = 1           # 1: Normalny, 2: Obrót w miejscu
+        self.mode_switch_time = 0.0   # Czas ostatniej zmiany trybu (do opóźnienia)
+        # ------------------------------------
+        
         # Statusy
         self.mqtt_connected = False
         self.mqtt_status_text = "MQTT: Rozłączono"
         
-        # --- NOWE ZMIENNE: Bezpieczeństwo i kontrola z pada ---
-        self.buttons_locked = False       # Domyślnie przyciski są odblokowane
-        self.trigger_full_start = False   # Flaga wyzwalająca kalibrację
+        self.buttons_locked = False
+        self.trigger_full_start = False
         
         # Logi
-        self.logs = []
+        self.logs = [] # Lista do przechowywania logów dla GUI
         
         # Narzędzia
         self.latency_estimator = LatencyEstimator(maxlen=100)

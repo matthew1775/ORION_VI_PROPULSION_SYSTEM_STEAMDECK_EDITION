@@ -5,6 +5,14 @@ import time
 from collections import deque
 import subprocess
 import platform
+import math 
+
+# Matplotlib
+import matplotlib
+
+matplotlib.use("TkAgg")
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 import config
 
@@ -20,15 +28,15 @@ class DashboardGUI:
         self.input_manager : InputManager = input_manager
         self.mqtt_manager : MqttManager = mqtt_manager
         
-        # --- DODANE ZMIENNE ---
-        self._last_locked_state = None
-        self._is_full_start_running = False
-        # ----------------------
-
+        # Dane do wykresu
+        self.plot_data_x = deque(maxlen=200)
+        self.plot_data_target = deque(maxlen=200)
+        self.plot_data_meas = deque(maxlen=200)
         self.start_time = time.time()
+        self.plot_counter = 0
+
         self.setup_ui()
         self._start_network_monitor()
-
 
     def _ping_host(self, ip):
         """Pomocnicza funkcja pingująca dany adres IP (nieblokująca)"""
@@ -44,6 +52,50 @@ class DashboardGUI:
             return response == 0
         except Exception:
             return False
+    def _draw_rover_top_view(self):
+        """Rysuje widok z góry w lewym panelu"""
+        self.rover_canvas.delete("all")
+        
+        # Pobieranie wymiarów
+        canvas_w = self.rover_canvas.winfo_width()
+        canvas_h = self.rover_canvas.winfo_height()
+        if canvas_w < 10: canvas_w, canvas_h = 480, 250 # Fallback
+            
+        cx, cy = canvas_w / 2, canvas_h / 2
+        
+        # Pobranie danych ze stanu aplikacji
+        mode = getattr(self.state, 'drive_mode', 1)
+        s = self.state.steering_val
+        
+        # Obliczanie kątów (identycznie jak w sterowaniu ESP32)
+        if mode == 1:
+            fl, fr, rl, rr = s, s, -s, -s
+        else: # Tryb 2: Obrót (X-turn)
+            angle = 0.8
+            fl, fr, rl, rr = angle, -angle, angle, angle
+            
+        # Rysowanie korpusu
+        self.rover_canvas.create_rectangle(cx-40, cy-70, cx+40, cy+70, fill="#222", outline="#444")
+        
+        # Rysowanie kół (funkcja pomocnicza do obrotu)
+        def draw_wheel(x, y, rad_angle, color):
+            w, h = 20, 45
+            points = [(-w/2, -h/2), (w/2, -h/2), (w/2, h/2), (-w/2, h/2)]
+            rotated = []
+            for px, py in points:
+                # Rotacja 2D
+                rx = x + (px * math.cos(rad_angle) - py * math.sin(-rad_angle))
+                ry = y + (px * math.sin(-rad_angle) + py * math.cos(rad_angle))
+                rotated.extend([rx, ry])
+            self.rover_canvas.create_polygon(rotated, fill=color, outline="white")
+
+        wheel_color = "#00ff00" if mode == 1 else "#FFAA00"
+        
+        # Rozstaw kół na rysunku
+        draw_wheel(cx-60, cy-50, fl, wheel_color) # FL
+        draw_wheel(cx+60, cy-50, fr, wheel_color) # FR
+        draw_wheel(cx-60, cy+50, rl, wheel_color) # RL
+        draw_wheel(cx+60, cy+50, rr, wheel_color) # RR
 
     def _check_connection(self, host, port=None):
         """
@@ -132,17 +184,14 @@ class DashboardGUI:
         self.main_frame = tk.Frame(self.root, bg=config.BG_COLOR)
         self.main_frame.pack(fill="both", expand=True)
 
-        # Lewy panel węższy (bez wykresu)
-        self.left_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR, width=300)
+        self.left_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR, width=500)
         self.left_frame.pack(side="left", fill="y", padx=10, pady=10)
         self.left_frame.pack_propagate(False)
 
-        # Środkowy panel dostaje więcej miejsca na płytki informacji
         self.center_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR)
         self.center_frame.pack(side="left", fill="both", expand=True, padx=10, pady=10)
 
-        # Prawy panel dopasowany do szerokości Decka
-        self.right_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR, width=350)
+        self.right_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR, width=400)
         self.right_frame.pack(side="left", fill="y", padx=10, pady=10)
         self.right_frame.pack_propagate(False)
 
@@ -156,7 +205,7 @@ class DashboardGUI:
         self.joy_container.pack(side="top", fill="x")
         self.joystick_list_frame = tk.Frame(self.joy_container, bg=config.BG_COLOR)
         
-        tk.Button(self.joy_container, text="  RESET JOYSTICK", command=self.refresh_joysticks, 
+        tk.Button(self.joy_container, text="⟳ RESET JOYSTICK", command=self.refresh_joysticks, 
                   bg=config.BTN_RESET_COLOR, fg="white", font=("Arial", 10, "bold")).pack(fill="x", pady=(0,10))
         self.joystick_list_frame.pack(fill="both", expand=True)
 
@@ -166,21 +215,28 @@ class DashboardGUI:
         tk.Label(instr, text="[W]/[S] - Przód/Tył | [R]/[F] - Limit", bg=config.BG_COLOR, fg="white", font=("Arial", 10, "bold")).pack()
         tk.Label(instr, text="[ESC] - Zamknij fullscreen", bg=config.BG_COLOR, fg="#888").pack()
 
+                # --- NOWA SEKCJA: WIZUALIZACJA PODWOZIA (Lewy dolny panel) ---
+        self.preview_frame = tk.LabelFrame(self.left_frame, text="Podgląd Skrętu Kół", 
+                                           bg=config.BG_COLOR, fg=config.FG_COLOR)
+        # Umieszczamy nad wykresem lub jako główny element dolny
+        self.preview_frame.pack(side="top", fill="both", expand=True, pady=10)
+
+        self.rover_canvas = tk.Canvas(self.preview_frame, bg="#111111", 
+                                      highlightthickness=0, height=250)
+        self.rover_canvas.pack(fill="both", expand=True)
+        # -------------------------------------------------------------
+
     def _build_center_panel(self):
         # Gauge (Zegary)
-# Gauge (Zegary) - Wersja kompaktowa
         gauge_frame = tk.LabelFrame(self.center_frame, text="Wskaźniki", bg=config.BG_COLOR, fg=config.FG_COLOR)
-        gauge_frame.pack(pady=5, fill="both") # Mniejszy margines
+        gauge_frame.pack(pady=10, fill="both")
+        self.gauge_canvas = tk.Canvas(gauge_frame, width=400, height=300, bg=config.BG_COLOR, highlightthickness=0)
+        self.gauge_canvas.pack(pady=10)
         
-        # Znacznie mniejszy Canvas
-        self.gauge_canvas = tk.Canvas(gauge_frame, width=240, height=140, bg=config.BG_COLOR, highlightthickness=0)
-        self.gauge_canvas.pack(pady=5)
-        
-        # Mniejsze czcionki dla etykiet
-        self.lbl_target = tk.Label(gauge_frame, text="Target: 0.0 RPS", bg=config.BG_COLOR, fg="white", font=("Arial", 16, "bold"))
+        self.lbl_target = tk.Label(gauge_frame, text="Target: 0.0 RPS", bg=config.BG_COLOR, fg="white", font=("Arial", 24, "bold"))
         self.lbl_target.pack()
-        self.lbl_steering = tk.Label(gauge_frame, text="Steering: 0.00", bg=config.BG_COLOR, fg="#FFAA00", font=("Arial", 12))
-        self.lbl_steering.pack(pady=(0, 5))
+        self.lbl_steering = tk.Label(gauge_frame, text="Steering: 0.00", bg=config.BG_COLOR, fg="#FFAA00", font=("Arial", 16))
+        self.lbl_steering.pack(pady=(0, 10))
 
         self.odrive_widgets = {}
 
@@ -260,14 +316,13 @@ class DashboardGUI:
         # --- Speed container ---
         speed_container = tk.Frame(frame, bg=config.BG_COLOR)
         speed_container.pack(anchor="w", padx=10, pady=2)
-
         widgets["lbl_kmh"] = tk.Label(
             speed_container, text="0.0 km/h",
             bg=config.BG_COLOR, fg="#ff00ff",
             font=("Consolas", 16, "bold")
         )
         widgets["lbl_kmh"].pack(side="left", padx=(0, 15))
-
+        
         widgets["lbl_ms"] = tk.Label(
             speed_container, text="0.00 m/s",
             bg=config.BG_COLOR, fg="#ff88ff",
@@ -275,6 +330,22 @@ class DashboardGUI:
         )
         widgets["lbl_ms"].pack(side="left")
 
+        # --- NOWE WSKAŹNIKI SERWA ---
+        widgets["lbl_servo_current"] = tk.Label(
+            speed_container, text="0.00 A",
+            bg=config.BG_COLOR, fg="#FFAA00",  # Kolor pomarańczowy
+            font=("Consolas", 12, "bold")
+        )
+        # padx=(15, 5) tworzy odstęp po lewej stronie (oddziela prąd od prędkości m/s)
+        widgets["lbl_servo_current"].pack(side="left", padx=(15, 5))
+
+        widgets["lbl_servo_angle"] = tk.Label(
+            speed_container, text="0.0°",
+            bg=config.BG_COLOR, fg="#00FFFF",  # Kolor błękitny
+            font=("Consolas", 12)
+        )
+        widgets["lbl_servo_angle"].pack(side="left")
+        
         # --- Position ---
         widgets["lbl_pos"] = tk.Label(
             frame, text="Pozycja: 0.00 obr",
@@ -340,6 +411,11 @@ class DashboardGUI:
         self.lbl_mqtt_status = tk.Label(status_col, text="MQTT: --", 
                                       bg=config.BG_COLOR, fg=config.FG_COLOR, font=("Arial", 10))
         self.lbl_mqtt_status.pack(anchor="w")
+
+        # --- NOWA ETYKIETA: TRYB JAZDY ---
+        self.lbl_drive_mode = tk.Label(status_col, text="TRYB: NORMALNY", 
+                                       bg=config.BG_COLOR, fg="#00FF00", font=("Arial", 12, "bold"))
+        self.lbl_drive_mode.pack(anchor="w", pady=(5, 0))
 
         # 2. Prawa strona nagłówka: Diody PING + Przycisk Reconnect
         controls_col = tk.Frame(header_frame, bg=config.BG_COLOR)
@@ -425,7 +501,6 @@ class DashboardGUI:
             self.lbl_dist.config(text="Dystans: 0.00 m")
 
     def run_full_start(self):
-        self._is_full_start_running = True  # <-- DODANE
         threading.Thread(target=self._full_start_thread, daemon=True).start()
 
     def _full_start_thread(self):
@@ -465,10 +540,6 @@ class DashboardGUI:
 
             self.btn_dump_errors.config(state="normal", bg=config.BTN_DUMP_COLOR)
             self.btn_reboot_odrive.config(state="normal", bg=config.BTN_REBOOT_COLOR)
-            # --- DODANE ---
-            self._is_full_start_running = False
-            self._last_locked_state = None  # Wymusza odświeżenie kolorów w GUI
-            # --------------n  
         
         self.root.after(0, enable_buttons)
 
@@ -476,51 +547,34 @@ class DashboardGUI:
         self.lbl_target.config(text=f"Target: {self.state.target_rps:.2f} RPS")
         self.lbl_steering.config(text=f"Steering: {self.state.steering_val:.2f}")
         self.lbl_mqtt_status.config(text=self.state.mqtt_status_text)
-
-        # --- NOWY KOD: Obsługa blokady przycisków na czarno ---
-        if not self._is_full_start_running:
-            if self.state.buttons_locked != self._last_locked_state:
-                self._last_locked_state = self.state.buttons_locked
-                if self.state.buttons_locked:
-                    # Blokujemy i zmieniamy kolory na czarny
-                    bg_locked = "black"
-                    fg_locked = "#444444" # Ciemnoszary, ledwo widoczny tekst
-                    self.btn_full_start.config(state="disabled", bg=bg_locked, fg=fg_locked)
-                    self.btn_calib.config(state="disabled", bg=bg_locked, fg=fg_locked)
-                    self.btn_closed_loop.config(state="disabled", bg=bg_locked, fg=fg_locked)
-                    self.btn_vel_mode.config(state="disabled", bg=bg_locked, fg=fg_locked)
-                    self.btn_ramp_mode.config(state="disabled", bg=bg_locked, fg=fg_locked)
-                    self.btn_dump_errors.config(state="disabled", bg=bg_locked, fg=fg_locked)
-                    self.btn_reboot_odrive.config(state="disabled", bg=bg_locked, fg=fg_locked)
-                else:
-                    # Odblokowujemy i przywracamy oryginalne kolory
-                    self.btn_full_start.config(state="normal", bg=config.BTN_FULL_START_COLOR, fg="white")
-                    self.btn_calib.config(state="normal", bg="#AA8800", fg="white")
-                    self.btn_closed_loop.config(state="normal", bg="#006600", fg="white")
-                    self.btn_vel_mode.config(state="normal", bg="#004488", fg="white")
-                    self.btn_ramp_mode.config(state="normal", bg="#550088", fg="white")
-                    self.btn_dump_errors.config(state="normal", bg=config.BTN_DUMP_COLOR, fg="white")
-                    self.btn_reboot_odrive.config(state="normal", bg=config.BTN_REBOOT_COLOR, fg="white")
-        # ----------------------------------------------------
-
+        # --- AKTUALIZACJA TRYBU JAZDY ---
+        mode = getattr(self.state, 'drive_mode', 1) # Pobranie trybu z utils.AppState
+        if mode == 1:
+            self.lbl_drive_mode.config(text="TRYB: NORMALNY", fg="#00FF00") # Zielony
+        elif mode == 2:
+            self.lbl_drive_mode.config(text="TRYB: OBRÓT W MIEJSCU", fg="#FFAA00") # Pomarańczowy
+        # --------------------------------
         for odrive_id, odrv in self.state.o_drives.items():
             widgets = self.odrive_widgets.get(odrive_id)
             if not widgets:
                 continue
-
             meas_rps = odrv.measured_velocity
             speed_ms = meas_rps * config.DISTANCE_PER_MOTOR_REV
             speed_kmh = speed_ms * 3.6
-
+            
             widgets["lbl_rps"].config(text=f"RPS: {meas_rps:.2f}")
             widgets["lbl_kmh"].config(text=f"{speed_kmh:.1f} km/h")
             widgets["lbl_ms"].config(text=f"{speed_ms:.2f} m/s")
-
             widgets["lbl_pos"].config(text=f"Pozycja: {odrv.measured_position:.2f} obr")
+            
+            # --- AKTUALIZACJA SERWO ---
+            # Obliczenie kąta w stopniach. Twój docelowy zakres w ESP32 to 1.0 radian (ok 57.3 st.)
+            angle_deg = self.state.steering_val * 45
+            
+            widgets["lbl_servo_current"].config(text=f"{odrv.servo_current:.2f} A")
+            widgets["lbl_servo_angle"].config(text=f"{angle_deg:.1f}°")
 
             trip_turns = odrv.measured_position - odrv.start_position_offset
-            trip_distance = trip_turns * config.DISTANCE_PER_MOTOR_REV
-            widgets["lbl_dist"].config(text=f"Dystans: {trip_distance:.2f} m")
 
             # Packet Age
             if odrv.last_feedback_time > 0:
@@ -570,26 +624,20 @@ class DashboardGUI:
         # Draw Gauge
         self._draw_gauge(self.state.target_rps)
 
-
+        if hasattr(self, 'rover_canvas'):
+            self._draw_rover_top_view()
+            
     def _draw_gauge(self, val):
         self.gauge_canvas.delete("all")
-        
-        # Nowe, mniejsze współrzędne środka (cx, cy) i promień (r)
-        cx, cy, r = 120, 110, 90 
+        cx, cy, r = 200, 150, 130
         max_v = config.ABSOLUTE_MAX_LIMIT
         
-        # Cieńszy pasek (width=15 zamiast 25)
-        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=0, extent=180, style="arc", outline="#333", width=15)
-        
+        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=0, extent=180, style="arc", outline="#333", width=25)
         limit_angle = (self.state.current_speed_limit / max_v) * 180
-        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=180, extent=-limit_angle, style="arc", outline="#665500", width=15)
-        
+        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=180, extent=-limit_angle, style="arc", outline="#665500", width=25)
         val_clamped = max(-max_v, min(max_v, val))
         draw_angle = (val_clamped / max_v) * 90 
-        
         color = "#00ff00" if val >= 0 else "#ff5500"
-        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=90, extent=-draw_angle, style="arc", outline=color, width=15)
-        
-        # Pomniejszone czcionki i przesunięte teksty na środku zegara
-        self.gauge_canvas.create_text(cx, cy-15, text=f"{val:.1f}", fill="white", font=("Arial", 24, "bold"))
-        self.gauge_canvas.create_text(cx, cy+20, text=f"Max: {self.state.current_speed_limit:.1f} RPS", fill="#888", font=("Arial", 10))
+        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=90, extent=-draw_angle, style="arc", outline=color, width=25)
+        self.gauge_canvas.create_text(cx, cy-20, text=f"{val:.1f}", fill="white", font=("Arial", 36, "bold"))
+        self.gauge_canvas.create_text(cx, cy+25, text=f"Max Limit: {self.state.current_speed_limit:.1f} RPS", fill="#888", font=("Arial", 12))
