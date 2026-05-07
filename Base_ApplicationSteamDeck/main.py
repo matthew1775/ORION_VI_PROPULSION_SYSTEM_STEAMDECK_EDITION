@@ -1,13 +1,22 @@
 # PROPULSION CONTROL DASHBOARD - MAIN MODULE
 import tkinter as tk
+import os          # <-- DODAJ TO
+import pygame      # <-- DODAJ TO
+
+# --- ZABEZPIECZENIE AUDIO DLA STEAM DECK ---
+# Musi być ustawione PRZED inicjalizacją jakiegokolwiek modułu pygame!
+os.environ["SDL_AUDIODRIVER"] = "pulse"
+# -------------------------------------------
+
 from utils import AppState
 from inputs import InputManager
 from comms import MqttManager
 from gui import DashboardGUI
 
-from comms import MqttManager
-from inputs import InputManager
-from utils import AppState
+# --- ZABEZPIECZENIE AUDIO DLA STEAM DECK ---
+# Musi być ustawione PRZED inicjalizacją jakiegokolwiek modułu pygame!
+#####os.environ["SDL_AUDIODRIVER"] = "pulse"
+
 
 def main():
     # 1. Inicjalizacja Głównego Okna
