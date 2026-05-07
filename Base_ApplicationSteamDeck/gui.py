@@ -184,14 +184,14 @@ class DashboardGUI:
         self.main_frame = tk.Frame(self.root, bg=config.BG_COLOR)
         self.main_frame.pack(fill="both", expand=True)
 
-        self.left_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR, width=500)
+        self.left_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR, width=250)
         self.left_frame.pack(side="left", fill="y", padx=10, pady=10)
         self.left_frame.pack_propagate(False)
 
         self.center_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR)
         self.center_frame.pack(side="left", fill="both", expand=True, padx=10, pady=10)
 
-        self.right_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR, width=400)
+        self.right_frame = tk.Frame(self.main_frame, bg=config.BG_COLOR, width=250)
         self.right_frame.pack(side="left", fill="y", padx=10, pady=10)
         self.right_frame.pack_propagate(False)
 
@@ -215,22 +215,21 @@ class DashboardGUI:
         tk.Label(instr, text="[W]/[S] - Przód/Tył | [R]/[F] - Limit", bg=config.BG_COLOR, fg="white", font=("Arial", 10, "bold")).pack()
         tk.Label(instr, text="[ESC] - Zamknij fullscreen", bg=config.BG_COLOR, fg="#888").pack()
 
-                # --- NOWA SEKCJA: WIZUALIZACJA PODWOZIA (Lewy dolny panel) ---
+        # --- NOWA SEKCJA: WIZUALIZACJA PODWOZIA (Lewy dolny panel) ---
         self.preview_frame = tk.LabelFrame(self.left_frame, text="Podgląd Skrętu Kół", 
                                            bg=config.BG_COLOR, fg=config.FG_COLOR)
-        # Umieszczamy nad wykresem lub jako główny element dolny
         self.preview_frame.pack(side="top", fill="both", expand=True, pady=10)
 
+        # ZMIANA: Wysokość canvasu podglądu z 250 na 160
         self.rover_canvas = tk.Canvas(self.preview_frame, bg="#111111", 
-                                      highlightthickness=0, height=250)
+                                      highlightthickness=0, height=160)
         self.rover_canvas.pack(fill="both", expand=True)
-        # -------------------------------------------------------------
 
     def _build_center_panel(self):
         # Gauge (Zegary)
         gauge_frame = tk.LabelFrame(self.center_frame, text="Wskaźniki", bg=config.BG_COLOR, fg=config.FG_COLOR)
         gauge_frame.pack(pady=10, fill="both")
-        self.gauge_canvas = tk.Canvas(gauge_frame, width=400, height=300, bg=config.BG_COLOR, highlightthickness=0)
+        self.gauge_canvas = tk.Canvas(gauge_frame, width=200, height=150, bg=config.BG_COLOR, highlightthickness=0)
         self.gauge_canvas.pack(pady=10)
         
         self.lbl_target = tk.Label(gauge_frame, text="Target: 0.0 RPS", bg=config.BG_COLOR, fg="white", font=("Arial", 24, "bold"))
@@ -629,15 +628,19 @@ class DashboardGUI:
             
     def _draw_gauge(self, val):
         self.gauge_canvas.delete("all")
-        cx, cy, r = 200, 150, 130
+        # ZMIANA: Skurczony zegar, przesunięty nieco wyżej (r=130 na r=95)
+        cx, cy, r = 100, 115, 95
         max_v = config.ABSOLUTE_MAX_LIMIT
         
-        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=0, extent=180, style="arc", outline="#333", width=25)
+        # ZMIANA: Cieńsze obręcze wskaźników (width=25 na width=20)
+        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=0, extent=180, style="arc", outline="#333", width=20)
         limit_angle = (self.state.current_speed_limit / max_v) * 180
-        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=180, extent=-limit_angle, style="arc", outline="#665500", width=25)
+        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=180, extent=-limit_angle, style="arc", outline="#665500", width=20)
         val_clamped = max(-max_v, min(max_v, val))
         draw_angle = (val_clamped / max_v) * 90 
         color = "#00ff00" if val >= 0 else "#ff5500"
-        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=90, extent=-draw_angle, style="arc", outline=color, width=25)
-        self.gauge_canvas.create_text(cx, cy-20, text=f"{val:.1f}", fill="white", font=("Arial", 36, "bold"))
-        self.gauge_canvas.create_text(cx, cy+25, text=f"Max Limit: {self.state.current_speed_limit:.1f} RPS", fill="#888", font=("Arial", 12))
+        self.gauge_canvas.create_arc(cx-r, cy-r, cx+r, cy+r, start=90, extent=-draw_angle, style="arc", outline=color, width=20)
+        
+        # ZMIANA: Dopasowanie czcionek do nowego rozmiaru
+        self.gauge_canvas.create_text(cx, cy-15, text=f"{val:.1f}", fill="white", font=("Arial", 28, "bold"))
+        self.gauge_canvas.create_text(cx, cy+20, text=f"Max Limit: {self.state.current_speed_limit:.1f} RPS", fill="#888", font=("Arial", 10))
