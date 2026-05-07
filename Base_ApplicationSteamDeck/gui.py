@@ -229,75 +229,72 @@ class DashboardGUI:
         # Gauge (Zegary)
         gauge_frame = tk.LabelFrame(self.center_frame, text="Wskaźniki", bg=config.BG_COLOR, fg=config.FG_COLOR)
         gauge_frame.pack(pady=10, fill="both")
-        self.gauge_canvas = tk.Canvas(gauge_frame, width=200, height=150, bg=config.BG_COLOR, highlightthickness=0)
-        self.gauge_canvas.pack(pady=10)
         
-        self.lbl_target = tk.Label(gauge_frame, text="Target: 0.0 RPS", bg=config.BG_COLOR, fg="white", font=("Arial", 24, "bold"))
-        self.lbl_target.pack()
-        self.lbl_steering = tk.Label(gauge_frame, text="Steering: 0.00", bg=config.BG_COLOR, fg="#FFAA00", font=("Arial", 16))
-        self.lbl_steering.pack(pady=(0, 10))
-
+        # --- ZMIANA: Tworzymy poziomy kontener na Canvas i Labele obok siebie ---
+        inner_gauge_frame = tk.Frame(gauge_frame, bg=config.BG_COLOR)
+        inner_gauge_frame.pack(fill="x", pady=5)
+        
+        # Canvas przypięty do lewej strony
+        # Zmniejszono szerokość na 220, ponieważ Twój półokrąg ma środek cx=100 i promień r=95
+        self.gauge_canvas = tk.Canvas(inner_gauge_frame, width=220, height=140, bg=config.BG_COLOR, highlightthickness=0)
+        self.gauge_canvas.pack(side="left", padx=10)
+        
+        # Kontener na napisy przypięty po prawej od Canvasu
+        labels_frame = tk.Frame(inner_gauge_frame, bg=config.BG_COLOR)
+        labels_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        
+        # Etykiety wyrównane do lewej strony ("w" - west) wewnątrz swojego kontenera
+        self.lbl_target = tk.Label(labels_frame, text="Target: 0.0 RPS", bg=config.BG_COLOR, fg="white", font=("Arial", 20, "bold"))
+        self.lbl_target.pack(anchor="w")
+        
+        self.lbl_steering = tk.Label(labels_frame, text="Steering: 0.00", bg=config.BG_COLOR, fg="#FFAA00", font=("Arial", 14))
+        self.lbl_steering.pack(anchor="w", pady=(5, 0))
+        
+        # --- (Reszta funkcji zostaje bez zmian) ---
         self.odrive_widgets = {}
-
         container = tk.Frame(self.center_frame, bg=config.BG_COLOR)
         container.pack(fill="both", expand=True)
-
+        
         ids = ["00", "10", "01", "11"]
-
         for i, odrive_id in enumerate(ids):
             frame, odrive_widget = self._build_odrive_panel(container, odrive_id)
-
             row = i // 2
             col = i % 2
-
             frame.grid(row = row, column= col, sticky="nsew", padx=5, pady=5)
-
             self.odrive_widgets[odrive_id] = odrive_widget
-
+            
         for i in range(2):
             container.grid_rowconfigure(i, weight=1)
             container.grid_columnconfigure(i, weight=1)
-
+            
         # Feedback Frame
         fb_frame = tk.LabelFrame(self.center_frame, text="Feedback & Diagnostyka", bg=config.BG_COLOR, fg="#00ff00")
         fb_frame.pack(pady=20, fill="x", padx=10)
         
-        # 1. RPS (Dodano)
         self.lbl_meas_vel = tk.Label(fb_frame, text="RPS: 0.00", bg=config.BG_COLOR, fg="#00ff00", font=("Consolas", 18))
         self.lbl_meas_vel.pack(anchor="w", padx=10, pady=2)
-
-        # 2. Kontener prędkości (km/h i m/s obok siebie)
+        
         speed_container = tk.Frame(fb_frame, bg=config.BG_COLOR)
         speed_container.pack(anchor="w", padx=10, pady=2)
-        
         self.lbl_kmh = tk.Label(speed_container, text="0.0 km/h", bg=config.BG_COLOR, fg="#ff00ff", font=("Consolas", 20, "bold"))
         self.lbl_kmh.pack(side="left", padx=(0, 20))
-        
         self.lbl_ms = tk.Label(speed_container, text="0.00 m/s", bg=config.BG_COLOR, fg="#ff88ff", font=("Consolas", 14))
         self.lbl_ms.pack(side="left")
-
-        # 3. Pozycja
+        
         self.lbl_pos = tk.Label(fb_frame, text="Pozycja: 0.00 obr", bg=config.BG_COLOR, fg="#00ccff", font=("Consolas", 18))
         self.lbl_pos.pack(anchor="w", padx=10, pady=5)
         
-        # 4. Dystans i Reset
         dist_container = tk.Frame(fb_frame, bg=config.BG_COLOR)
         dist_container.pack(anchor="w", padx=10, pady=5)
-        
         self.lbl_dist = tk.Label(dist_container, text="Dystans: 0.00 m", bg=config.BG_COLOR, fg="white", font=("Consolas", 18))
         self.lbl_dist.pack(side="left")
         
-        #tk.Button(dist_container, text="[RESET]", command=lambda : self.reset_trip(), bg="#444", fg="white", font=("Arial", 10)).pack(side="left", padx=10)
-        
         tk.Frame(fb_frame, height=1, bg="#444").pack(fill="x", padx=5, pady=5)
-        
-        # 5. Diagnostyka (Packet Age + Lag)
         self.lbl_packet_age = tk.Label(fb_frame, text="Sieć (Packet Age): -- ms", bg=config.BG_COLOR, fg="#aaaaaa", font=("Consolas", 11))
         self.lbl_packet_age.pack(anchor="w", padx=10)
-
         self.lbl_lag = tk.Label(fb_frame, text="Lag: -- ms", bg=config.BG_COLOR, fg="#aaaaaa", font=("Consolas", 16, "bold"))
         self.lbl_lag.pack(anchor="w", padx=10, pady=(5,10))
-
+        
     def _build_odrive_panel(self, parent, odrive_id):
         frame = tk.LabelFrame(parent, text=f"ODrive {odrive_id}", bg=config.BG_COLOR, fg="#00ff00")
         frame.grid_propagate(False)
