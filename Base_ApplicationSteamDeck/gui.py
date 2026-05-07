@@ -30,38 +30,37 @@ class DashboardGUI:
         self.input_manager = input_manager
         self.mqtt_manager = mqtt_manager
         
-        # --- BEZPIECZNA INICJALIZACJA DŹWIĘKU DLA STEAM DECK (.WAV) ---
+        # --- INICJALIZACJA DŹWIĘKU (PIPEWIRE) ---
         self.alarm_sound = None
         import pygame
         import os
         
-        # Upewniamy się, że nie ma starych wymuszeń z systemu
-        if "SDL_AUDIODRIVER" in os.environ:
-            del os.environ["SDL_AUDIODRIVER"]
-
         try:
-            # Próba 1: Bezpieczne parametry dla ALSA/PipeWire (Linux)
-            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
+            # Ponieważ w main.py wymusiliśmy PipeWire, standardowe init powinno zadziałać idealnie.
+            # Steam Deck optymalnie pracuje na 48000Hz (natywna częstotliwość PipeWire)
+            pygame.mixer.init(frequency=48000, size=-16, channels=2, buffer=1024)
+            
             if os.path.exists("alarm.wav"):
                 self.alarm_sound = pygame.mixer.Sound("alarm.wav")
                 self.alarm_sound.set_volume(1.0)
-                print("[Audio] Zainicjowano pomyślnie. Alarm WAV gotowy.")
+                print("[Audio] Zainicjowano pomyślnie przez PipeWire. Alarm WAV gotowy.")
             else:
                 print("[Audio] Brak pliku alarm.wav. Alarm wyłączony.")
                 
-        except pygame.error as e1:
-            print(f"[Błąd Audio - Próba 1] {e1}")
+        except pygame.error as e:
+            print(f"[Błąd Audio - PipeWire] Nie udało się podpiąć pod system dźwięku: {e}")
+            
+            # Ostateczny ratunek - wyczyszczenie zmiennej i próba "na ślepo"
             try:
-                # Próba 2: Całkowity "automat" (pozwala Pygame użyć domyślnych sterowników systemu)
+                del os.environ["SDL_AUDIODRIVER"]
                 pygame.mixer.quit()
                 pygame.mixer.init()
                 if os.path.exists("alarm.wav"):
                     self.alarm_sound = pygame.mixer.Sound("alarm.wav")
-                    self.alarm_sound.set_volume(1.0)
-                    print("[Audio] Zainicjowano pomyślnie (ustawienia automatyczne).")
-            except pygame.error as e2:
-                print(f"[Błąd Audio - Próba 2] Ostateczna porażka dźwięku: {e2}")
-        # --------------------------------------------------------------
+                    print("[Audio] Zainicjowano w trybie ratunkowym.")
+            except Exception:
+                pass # Całkowita porażka ignorowana
+        # ----------------------------------------
         # ----------------------------------------
         # Dane do wykresu
         self.plot_data_x = deque(maxlen=200)
