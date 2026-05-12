@@ -76,15 +76,25 @@ class DashboardGUI:
         cx, cy = canvas_w / 2, canvas_h / 2
         
         # Pobranie danych ze stanu aplikacji
+        # Pobranie danych ze stanu aplikacji
         mode = getattr(self.state, 'drive_mode', 1)
         s = self.state.steering_val
+        s = 0.0 if abs(s) < 0.25 else s
         
-        # Obliczanie kątów (identycznie jak w sterowaniu ESP32)
+        # Obliczanie kątów w oparciu o kinematykę Ackermanna
+# Obliczanie kątów w oparciu o kinematykę Ackermanna
         if mode == 1:
-            fl, fr, rl, rr = s, s, -s, -s
-        else: # Tryb 2: Obrót (X-turn)
+            L, W = 1.0, 1.0
+            fl = math.atan((s * L) / (2 + s * W))
+            fr = math.atan((s * L) / (2 - s * W))
+            rl = -fl
+            rr = -fr
+            
+            # Odwracamy gotowe kąty dla rysunku
+            fl, fr, rl, rr = -fl, -fr, -rl, -rr
+        else: # Tryb 2: Obrót (X-turn) # Tryb 2: Obrót (X-turn)
             angle = 0.8
-            fl, fr, rl, rr = angle, -angle, angle, angle
+            fl, fr, rl, rr = -angle, angle, angle, -angle
             
         # Rysowanie korpusu
         self.rover_canvas.create_rectangle(cx-40, cy-70, cx+40, cy+70, fill="#222", outline="#444")
@@ -577,7 +587,33 @@ class DashboardGUI:
             
             # --- AKTUALIZACJA SERWO ---
             # Obliczenie kąta w stopniach. Twój docelowy zakres w ESP32 to 1.0 radian (ok 57.3 st.)
-            angle_deg = self.state.steering_val * 45
+# --- AKTUALIZACJA SERWO ---
+            # --- AKTUALIZACJA SERWO ---
+            s = self.state.steering_val
+            s = 0.0 if abs(s) < 0.25 else s
+            L, W = 1.0, 1.0
+            
+            angle_rad = 0.0
+            if mode == 1:
+                # ODrive id: "00"=FL, "10"=RL, "01"=FR, "11"=RR
+                if odrive_id == "00":
+                    angle_rad = math.atan((s * L) / (2 + s * W))
+                elif odrive_id == "10":
+                    angle_rad = -math.atan((s * L) / (2 + s * W))
+                elif odrive_id == "01":
+                    angle_rad = math.atan((s * L) / (2 - s * W))
+                elif odrive_id == "11":
+                    angle_rad = -math.atan((s * L) / (2 - s * W))
+                
+                # Odwracamy kierunek po poprawnym obliczeniu Ackermanna
+                angle_rad = -angle_rad
+            else:
+                # Stałe kąty dla trybu X-Turn (Obrót w miejscu)
+                if odrive_id in ["00", "11"]: angle_rad = 1.0
+                elif odrive_id in ["01", "10"]: angle_rad = -1.0
+                
+                
+            angle_deg = math.degrees(angle_rad)
             
             widgets["lbl_servo_current"].config(text=f"{odrv.servo_current:.2f} A")
             widgets["lbl_servo_angle"].config(text=f"{angle_deg:.1f}°")

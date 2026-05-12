@@ -102,17 +102,33 @@ class MqttManager:
     def send_drive_command(self):
         """Wysyła ramkę sterującą JSON zależnie od wybranego trybu jazdy"""
         if self.client and self.state.mqtt_connected:
+            import math # Upewnij się, że biblioteka jest zaimportowana
+            
             v = round(self.state.target_rps, 3)
             s = round(self.state.steering_val, 3)
             s = 0.0 if abs(s) < 0.25 else s
             
-            # 1. Deklaracja pustej zmiennej - to usuwa czerwone podkreślenie!
             payload = None 
                          
-            # ===================================================
-            # TRYB 1: JAZDA NORMALNA
+# ===================================================
+            # TRYB 1: JAZDA NORMALNA (Ackermann 4WS)
             # ===================================================
             if getattr(self.state, 'drive_mode', 1) == 1:
+                L = 1.0  
+                W = 1.0  
+                
+                # 1. Zwykłe obliczenia Ackermanna (BEZ s = -s wcześniej!)
+                fl_rad = math.atan((s * L) / (2 + s * W))
+                fr_rad = math.atan((s * L) / (2 - s * W))
+                rl_rad = -fl_rad
+                rr_rad = -fr_rad
+
+                # 2. DOPIERO TERAZ odwracamy wyniki, aby łazik skręcał fizycznie w dobrą stronę
+                fl_rad = -fl_rad
+                fr_rad = -fr_rad
+                rl_rad = -rl_rad
+                rr_rad = -rr_rad
+
                 payload = {
                     "eventType": "propulsion",
                     "velocity": {
@@ -120,13 +136,17 @@ class MqttManager:
                         "rl_speed": v,
                         "fr_speed": -v,
                         "rr_speed": -v,
-                        "fl_rad": s,
-                        "rl_rad": -s,
-                        "fr_rad": s,
-                        "rr_rad": -s
+                        "fl_rad": fl_rad,
+                        "rl_rad": rl_rad,
+                        "fr_rad": fr_rad,
+                        "rr_rad": rr_rad
                     }
                 }
 
+            # ===================================================
+            # TRYB 2: OBRÓT W MIEJSCU
+            # ===================================================
+            # ... (reszta kodu dla trybu drugiego pozostaje bez zmian)
             # ===================================================
             # TRYB 2: OBRÓT W MIEJSCU
             # ===================================================

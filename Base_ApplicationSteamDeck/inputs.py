@@ -21,6 +21,7 @@ class InputManager:
         self.joysticks = []
         pygame.joystick.quit()
         pygame.joystick.init()
+        pygame.event.clear()
         count = pygame.joystick.get_count()
         self.joysticks = [pygame.joystick.Joystick(i) for i in range(count)]
         for joy in self.joysticks:
@@ -44,8 +45,10 @@ class InputManager:
         """Oblicza sterowanie i aktualizuje AppState"""
         try:
             events = pygame.event.get()
-        except KeyError:
+        except (KeyError, SystemError, Exception) as e: # <--- Zmień tę linijkę
+            # Złap błędy SystemError wynikające z odłączenia / błędu Pygame
             events = []
+            pygame.event.clear() # Wyczyść kolejkę, żeby program nie utknął
             
         for event in events:
             # ==========================================
